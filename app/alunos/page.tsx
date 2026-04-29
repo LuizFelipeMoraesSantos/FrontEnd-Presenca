@@ -5,26 +5,24 @@ import { Users, RefreshCw, UserPlus } from 'lucide-react'
 import Link from 'next/link'
 import { StudentsTable } from '@/components/students-table'
 import { Button } from '@/components/ui/button'
-import { getEstudantes, atualizarEstudante, deletarEstudante, mockEstudantes } from '@/lib/api'
+import { getEstudantes, atualizarEstudante, deletarEstudante } from '@/lib/api'
 import type { Estudante } from '@/lib/types'
 import { toast } from 'sonner'
 
 export default function AlunosPage() {
+  // Alterado de 'students' para 'estudantes' para alinhar com o restante do código
   const [estudantes, setEstudantes] = useState<Estudante[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const [useMock, setUseMock] = useState(false)
 
   const fetchData = async () => {
     setIsLoading(true)
     try {
       const data = await getEstudantes()
       setEstudantes(data)
-      setUseMock(false)
-    } catch {
-      setEstudantes(mockEstudantes)
-      setUseMock(true)
-      toast.info('Usando dados de demonstração', {
-        description: 'Backend não disponível. Conecte ao servidor Spring Boot.',
+    } catch (error) {
+      console.error('Erro ao buscar dados:', error)
+      toast.error('Erro de conexão', {
+        description: 'Não foi possível carregar a lista de alunos do servidor.',
       })
     } finally {
       setIsLoading(false)
@@ -36,22 +34,12 @@ export default function AlunosPage() {
   }, [])
 
   const handleUpdate = async (id: number, uid: string, nome: string) => {
-    if (useMock) {
-      setEstudantes((prev) =>
-        prev.map((e) => (e.id === id ? { ...e, uid, nome } : e))
-      )
-      toast.success('Aluno atualizado!', {
-        description: `${nome} foi atualizado com sucesso.`,
-      })
-      return
-    }
-
     try {
       await atualizarEstudante(id, uid, nome)
       toast.success('Aluno atualizado!', {
         description: `${nome} foi atualizado com sucesso.`,
       })
-      fetchData()
+      fetchData() // Recarrega a lista após atualizar
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Erro desconhecido'
       toast.error('Erro ao atualizar', {
@@ -64,20 +52,12 @@ export default function AlunosPage() {
   const handleDelete = async (id: number) => {
     const estudante = estudantes.find((e) => e.id === id)
     
-    if (useMock) {
-      setEstudantes((prev) => prev.filter((e) => e.id !== id))
-      toast.success('Aluno excluído!', {
-        description: `${estudante?.nome} foi removido do sistema.`,
-      })
-      return
-    }
-
     try {
       await deletarEstudante(id)
       toast.success('Aluno excluído!', {
         description: `${estudante?.nome} foi removido do sistema.`,
       })
-      fetchData()
+      fetchData() // Recarrega a lista após excluir
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Erro desconhecido'
       toast.error('Erro ao excluir', {

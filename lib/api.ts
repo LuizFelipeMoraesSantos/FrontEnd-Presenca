@@ -11,7 +11,7 @@ const api = axios.create({
 
 // Estudantes
 export async function getEstudantes(): Promise<Estudante[]> {
-  const response = await api.get<Estudante[]>('/Estudantes')
+  const response = await api.get<Estudante[]>('/')
   return response.data
 }
 

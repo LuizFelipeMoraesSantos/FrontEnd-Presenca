@@ -5,7 +5,7 @@ import { ScanLine, History, CheckCircle } from 'lucide-react'
 import { AttendanceRegister } from '@/components/attendance-register'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { registrarChamada, mockEstudantes } from '@/lib/api'
+import { registrarChamada } from '@/lib/api' // mockEstudantes removido com sucesso
 import { toast } from 'sonner'
 
 interface AttendanceRecord {
@@ -20,59 +20,44 @@ export default function ChamadaPage() {
 
   const handleRegister = async (uid: string) => {
     try {
+      // 1. Chamada para o Backend
       const response = await registrarChamada(uid)
+      
+      // 2. CORREÇÃO DA TIPAGEM: 
+      // Como o seu Java retorna uma String, tratamos ela aqui para extrair o nome
+      const mensagemDoBack = String(response)
+      const nomeExtraido = mensagemDoBack.includes('Presença registrada para:')
+        ? mensagemDoBack.replace('Presença registrada para: ', '')
+        : 'Aluno Identificado'
+
       const newRecord: AttendanceRecord = {
         id: Date.now(),
-        nome: response.estudanteNome || 'Aluno',
-        uid,
+        nome: nomeExtraido,
+        uid: uid,
         horario: new Date().toLocaleTimeString('pt-BR', {
           hour: '2-digit',
           minute: '2-digit',
           second: '2-digit',
         }),
       }
+
+      // Atualiza a lista com o novo registro no topo
       setRecords((prev) => [newRecord, ...prev].slice(0, 10))
+      
       toast.success('Presença registrada!', {
-        description: `${newRecord.nome} - ${newRecord.horario}`,
+        description: `${nomeExtraido} - ${newRecord.horario}`,
       })
-    } catch (error: unknown) {
-      if (error instanceof Error) {
-        const axiosError = error as { response?: { data?: string; status?: number } }
-        if (axiosError.response?.status === 404) {
-          toast.error('Tag não encontrada', {
-            description: 'Este UID não está cadastrado no sistema.',
-          })
-        } else if (axiosError.response?.data?.includes('já registrada')) {
-          toast.warning('Presença já registrada', {
-            description: 'Este aluno já teve presença registrada hoje.',
-          })
-        } else {
-          // Modo demo: simular registro
-          const mockStudent = mockEstudantes.find((e) => e.uid === uid)
-          if (mockStudent) {
-            const newRecord: AttendanceRecord = {
-              id: Date.now(),
-              nome: mockStudent.nome,
-              uid,
-              horario: new Date().toLocaleTimeString('pt-BR', {
-                hour: '2-digit',
-                minute: '2-digit',
-                second: '2-digit',
-              }),
-            }
-            setRecords((prev) => [newRecord, ...prev].slice(0, 10))
-            toast.success('Presença registrada! (Demo)', {
-              description: `${newRecord.nome} - ${newRecord.horario}`,
-            })
-          } else {
-            toast.error('Tag não encontrada (Demo)', {
-              description: 'Use um UID dos alunos cadastrados.',
-            })
-            throw error
-          }
-        }
+    } catch (error: any) {
+      console.error("Erro na chamada:", error)
+      
+      if (error.response?.status === 404) {
+        toast.error('Tag não encontrada', {
+          description: 'Este UID não está cadastrado no sistema.',
+        })
       } else {
-        throw error
+        toast.error('Erro de conexão', {
+          description: 'Verifique se o Backend Java está rodando na porta 8080.',
+        })
       }
     }
   }
@@ -113,9 +98,6 @@ export default function ChamadaPage() {
                 <p className="font-medium text-muted-foreground">
                   Nenhuma presença registrada
                 </p>
-                <p className="mt-1 text-sm text-muted-foreground/70">
-                  Aproxime uma tag RFID para começar
-                </p>
               </div>
             ) : (
               <div className="space-y-3">
@@ -139,9 +121,6 @@ export default function ChamadaPage() {
                     </div>
                     <div className="text-right">
                       <p className="text-sm font-medium">{record.horario}</p>
-                      {index === 0 && (
-                        <span className="text-xs text-primary">Último registro</span>
-                      )}
                     </div>
                   </div>
                 ))}
