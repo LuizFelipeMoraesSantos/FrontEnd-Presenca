@@ -2,8 +2,8 @@ import axios from 'axios'
 import type { Estudante, Presenca, PresencaMensal } from './types'
 
 const api = axios.create({
-  // Ajustado para incluir o caminho do Controller
-  baseURL: 'http://localhost:8080/api/estudantes', 
+  // URL ajustada para o IP local para evitar conflitos de DNS no Windows
+  baseURL: 'http://127.0.0.1:8080/api/estudantes', 
   headers: {
     'Content-Type': 'application/json',
   },
@@ -11,7 +11,8 @@ const api = axios.create({
 
 // Estudantes
 export async function getEstudantes(): Promise<Estudante[]> {
-  const response = await api.get<Estudante[]>('/')
+  // Chamada para a rota base do controller no Java
+  const response = await api.get<Estudante[]>('') 
   return response.data
 }
 
@@ -24,7 +25,6 @@ export async function cadastrarEstudante(uid: string, nome: string): Promise<Est
 
 export async function atualizarEstudante(id: number, uid: string, nome: string): Promise<Estudante> {
   const response = await api.put<Estudante>('/atualizar', null, {
-    // Sincronizado com o novo parâmetro 'nome' do Back
     params: { id, uid, nome }, 
   })
   return response.data
@@ -35,8 +35,8 @@ export async function deletarEstudante(id: number): Promise<void> {
 }
 
 // Chamada/Presença
-export async function registrarChamada(uid: string): Promise<Presenca> {
-  const response = await api.post<Presenca>('/chamada', null, {
+export async function registrarChamada(uid: string): Promise<any> {
+  const response = await api.post('/chamada', null, {
     params: { uid },
   })
   return response.data
@@ -48,6 +48,5 @@ export async function getPresencasMensais(mes: number, ano: number): Promise<Pre
   })
   return response.data
 }
-
 
 export default api
