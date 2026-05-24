@@ -50,4 +50,16 @@ export async function getPresencasMensais(mes: number, ano: number): Promise<Pre
   return response.data
 }
 
+export async function adicionarPresencaManual(estudanteId: number, data: string): Promise<void> {
+  await api.post('/presenca/manual', null, {
+    params: { estudanteId, data },
+  })
+}
+
+export async function removerPresenca(estudanteId: number, data: string): Promise<void> {
+  await api.delete('/presenca', {
+    params: { estudanteId, data },
+  })
+}
+
 export default api
