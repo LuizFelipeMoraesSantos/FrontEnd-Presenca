@@ -3,7 +3,7 @@ import type { Estudante, Presenca, PresencaMensal } from './types'
 
 const api = axios.create({
   // URL ajustada para o IP local para evitar conflitos de DNS no Windows
-  baseURL: 'http://127.0.0.1:8080/api/estudantes', 
+  baseURL: 'http://127.0.0.1:8080/api/estudantes',
   headers: {
     'Content-Type': 'application/json',
   },
@@ -11,7 +11,6 @@ const api = axios.create({
 
 // Estudantes
 export async function getEstudantes(): Promise<Estudante[]> {
-  // Chamada para a rota base do controller no Java
   const response = await api.get<Estudante[]>('') 
   return response.data
 }
@@ -23,6 +22,7 @@ export async function cadastrarEstudante(uid: string, nome: string): Promise<Est
   return response.data
 }
 
+
 export async function atualizarEstudante(id: number, uid: string, nome: string): Promise<Estudante> {
   const response = await api.put<Estudante>('/atualizar', null, {
     params: { id, uid, nome }, 
@@ -30,8 +30,9 @@ export async function atualizarEstudante(id: number, uid: string, nome: string):
   return response.data
 }
 
+
 export async function deletarEstudante(id: number): Promise<void> {
-  await api.delete(`/deletar/${id}`)
+  await api.delete(`/deletar/${id}`) 
 }
 
 // Chamada/Presença

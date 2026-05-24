@@ -46,7 +46,7 @@ export default function DashboardPage() {
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
           <p className="text-muted-foreground">
-            Bem-vindo ao Chico Sabido - Sistema de Chamada RFID
+            Bem-vindo ao PRESENCA - Sistema de Chamada RFID
           </p>
         </div>
         <Button variant="outline" onClick={fetchData} disabled={isLoading}>

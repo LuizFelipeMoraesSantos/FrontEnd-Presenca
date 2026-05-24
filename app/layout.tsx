@@ -19,7 +19,7 @@ const geistMono = Geist_Mono({
 })
 
 export const metadata: Metadata = {
-  title: 'Chico Sabido - Sistema de Chamada RFID',
+  title: 'PRESENCA - Sistema de Chamada RFID',
   description: 'Sistema inteligente de registro de presença escolar via RFID',
   generator: 'v0.app',
   icons: {

@@ -4,7 +4,7 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  /* Chico Sabido - Educational Theme */
+  /* Presenca - Educational Theme */
   --background: oklch(0.98 0.005 240);
   --foreground: oklch(0.15 0.02 260);
   --card: oklch(1 0 0);

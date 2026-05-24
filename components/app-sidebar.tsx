@@ -31,7 +31,7 @@ export function AppSidebar() {
         </div>
         <div className="flex flex-col">
           <span className="text-lg font-bold text-sidebar-foreground">
-            Chico Sabido
+            PRESENCA
           </span>
           <span className="text-xs text-sidebar-foreground/60">
             Sistema de Chamada
