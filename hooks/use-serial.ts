@@ -1,10 +1,13 @@
 'use client'
 
 import { useState, useCallback, useRef, useEffect } from 'react'
+import type { ESP32Command, ESP32Event } from '@/lib/esp32-types'
+import { serializeCommand, parseEvent } from '@/lib/esp32-types'
 
 interface UseSerialOptions {
   baudRate?: number
   onData?: (data: string) => void
+  onEvent?: (event: ESP32Event) => void
 }
 
 interface UseSerialReturn {
@@ -13,17 +16,20 @@ interface UseSerialReturn {
   isConnecting: boolean
   connect: () => Promise<void>
   disconnect: () => Promise<void>
+  send: (command: ESP32Command) => Promise<void>
+  sendRaw: (data: string) => Promise<void>
   error: string | null
 }
 
 export function useSerial(options: UseSerialOptions = {}): UseSerialReturn {
-  const { baudRate = 9600, onData } = options
+  const { baudRate = 115200, onData, onEvent } = options
   const [isConnected, setIsConnected] = useState(false)
   const [isConnecting, setIsConnecting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   
   const portRef = useRef<SerialPort | null>(null)
   const readerRef = useRef<ReadableStreamDefaultReader<Uint8Array> | null>(null)
+  const writerRef = useRef<WritableStreamDefaultWriter<Uint8Array> | null>(null)
   const isReadingRef = useRef(false)
 
   // Check if Web Serial API is supported
@@ -55,6 +61,13 @@ export function useSerial(options: UseSerialOptions = {}): UseSerialReturn {
           if (cleanLine && onData) {
             onData(cleanLine)
           }
+          // Parse como evento ESP32
+          if (cleanLine && onEvent) {
+            const event = parseEvent(cleanLine)
+            if (event) {
+              onEvent(event)
+            }
+          }
         }
       }
     } catch (err) {
@@ -66,7 +79,7 @@ export function useSerial(options: UseSerialOptions = {}): UseSerialReturn {
       reader.releaseLock()
       readerRef.current = null
     }
-  }, [onData])
+  }, [onData, onEvent])
 
   const connect = useCallback(async () => {
     if (!isSupported) {
