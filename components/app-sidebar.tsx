@@ -3,7 +3,6 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
-  LayoutDashboard,
   Users,
   UserPlus,
   ScanLine,
@@ -12,8 +11,8 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
+// Tiramos o Dashboard daqui
 const navigation = [
-  { name: 'Dashboard', href: '/', icon: LayoutDashboard },
   { name: 'Alunos', href: '/alunos', icon: Users },
   { name: 'Cadastrar Aluno', href: '/cadastrar', icon: UserPlus },
   { name: 'Registro de Chamada', href: '/chamada', icon: ScanLine },
@@ -66,10 +65,10 @@ export function AppSidebar() {
       <div className="border-t border-sidebar-border p-4">
         <div className="rounded-lg bg-sidebar-accent/50 p-4">
           <p className="text-xs font-medium text-sidebar-foreground/80">
-            Sistema RFID
+            Dispositivo Biométrico
           </p>
           <p className="mt-1 text-xs text-sidebar-foreground/50">
-            Conectado ao leitor
+            ESP32-C6 + DY50 Biometria
           </p>
           <div className="mt-2 flex items-center gap-2">
             <span className="h-2 w-2 animate-pulse rounded-full bg-green-500" />
