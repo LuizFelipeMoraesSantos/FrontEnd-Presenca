@@ -1,8 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { User, Fingerprint, UserPlus } from 'lucide-react'
+import { User, Fingerprint, UserPlus, CheckCircle2, Wifi, WifiOff } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -14,6 +14,7 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 import { cadastrarEstudante } from '@/lib/api'
+import axios from 'axios'
 import { toast } from 'sonner'
 
 export function StudentForm() {
@@ -21,29 +22,54 @@ export function StudentForm() {
   const [nome, setNome] = useState('')
   const [idBiometrico, setIdBiometrico] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isEscutandoWifi, setIsEscutandoWifi] = useState(false)
+
+  // COLOQUE AQUI O ENDEREÇO IP QUE APARECE NO MONITOR SERIAL DO SEU ESP32
+  const ESP32_IP = '192.168.1.150' 
+
+  useEffect(() => {
+    let interval: NodeJS.Timeout
+
+    if (isEscutandoWifi && !idBiometrico) {
+      // O computador requisita diretamente o IP do ESP32 na rede local
+      interval = setInterval(async () => {
+        try {
+          const response = await axios.get(`http://${ESP32_IP}/captura`, { timeout: 800 })
+          if (response.data && response.data.uid) {
+            setIdBiometrico(response.data.uid)
+            setIsEscutandoWifi(false)
+            toast.success(`Digital capturada direto do ESP32! ID: ${response.data.uid}`)
+          }
+        } catch (err) {
+          // Ignora erros de timeout enquanto aguarda o dedo no sensor
+        }
+      }, 1000)
+    }
+
+    return () => { if (interval) clearInterval(interval) }
+  }, [isEscutandoWifi, idBiometrico])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
-    if (!nome.trim() || !idBiometrico.trim()) {
-      toast.error('Por favor, preencha todos os campos.')
+    if (!nome.trim()) {
+      toast.error('Por favor, digite o nome completo.')
       return
     }
 
-    const idNum = parseInt(idBiometrico, 10)
-    if (isNaN(idNum) || idNum < 1 || idNum > 162) {
-      toast.error('O ID Biométrico deve ser um número válido entre 1 e 162 (limite do sensor DY50).')
+    if (!idBiometrico) {
+      toast.error('Nenhuma biometria capturada.')
       return
     }
 
     setIsSubmitting(true)
 
     try {
-      // Enviamos o ID Biométrico no parâmetro esperado pela API
-      await cadastrarEstudante(idBiometrico.trim(), nome.trim())
+      // Envia os dados consolidados para salvar no banco de dados através do Spring Boot
+      await cadastrarEstudante(idBiometrico, nome.trim())
 
       toast.success('Aluno cadastrado com sucesso!', {
-        description: `${nome} foi vinculado ao ID Biométrico ${idBiometrico}.`,
+        description: `${nome} foi salvo e vinculado ao ID ${idBiometrico}.`,
       })
       
       setNome('')
@@ -51,10 +77,8 @@ export function StudentForm() {
       router.push('/alunos')
       router.refresh()
     } catch (error) {
-      console.error('Erro ao cadastrar:', error)
-      toast.error('Erro ao salvar o aluno no banco de dados.', {
-        description: 'Verifique se a conexão com o servidor Spring Boot está ativa.',
-      })
+      console.error(error)
+      toast.error('Erro ao salvar aluno no backend.')
     } finally {
       setIsSubmitting(false)
     }
@@ -65,7 +89,7 @@ export function StudentForm() {
       <CardHeader className="text-center">
         <CardTitle className="text-2xl">Cadastrar Novo Aluno</CardTitle>
         <CardDescription>
-          Preencha os dados do aluno e defina a sua posição de registro no leitor biométrico DY50
+          Envie a digital do leitor diretamente para o Frontend e salve no banco de dados
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -86,40 +110,48 @@ export function StudentForm() {
             </div>
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="idBiometrico">ID de Registro Biométrico (Sensor DY50)</Label>
-            <div className="relative">
-              <Fingerprint className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-              <Input
-                id="idBiometrico"
-                type="number"
-                min="1"
-                max="162"
-                placeholder="Ex: 1"
-                className="pl-10"
-                value={idBiometrico}
-                onChange={(e) => setIdBiometrico(e.target.value)}
-                disabled={isSubmitting}
-                required
-              />
-            </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              Insira o número correspondente à vaga que a digital deste aluno vai ocupar (ou já ocupa) na memória interna do sensor.
-            </p>
+          <div className="space-y-3 rounded-lg border p-4 bg-muted/40">
+            <Label className="text-sm font-semibold flex items-center gap-2">
+              <Wifi className="h-4 w-4 text-primary" /> Captura Direta via Wi-Fi
+            </Label>
+
+            {!isEscutandoWifi && !idBiometrico ? (
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full text-xs gap-2"
+                onClick={() => setIsEscutandoWifi(true)}
+              >
+                <Wifi className="h-3 w-3" />
+                Vincular Digital via Wi-Fi
+              </Button>
+            ) : isEscutandoWifi ? (
+              <div className="space-y-2">
+                <div className="text-center p-4 border border-dashed rounded-md bg-background text-xs text-muted-foreground animate-pulse">
+                  Conectado ao leitor biométrico... Coloque o dedo no sensor agora.
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="w-full text-xs text-destructive gap-1"
+                  onClick={() => setIsEscutandoWifi(false)}
+                >
+                  <WifiOff className="h-3 w-3" /> Cancelar
+                </Button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 text-sm text-green-600 bg-green-50/50 border border-green-200 p-3 rounded-md">
+                <CheckCircle2 className="h-5 w-5 shrink-0" />
+                <div>
+                  <p className="font-semibold">Digital Sincronizada!</p>
+                  <p className="text-xs text-green-700">ID Pronto: {idBiometrico}</p>
+                </div>
+              </div>
+            )}
           </div>
 
-          <Button type="submit" className="w-full" disabled={isSubmitting}>
-            {isSubmitting ? (
-              <>
-                <div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-background border-t-transparent" />
-                Salvando...
-              </>
-            ) : (
-              <>
-                <UserPlus className="mr-2 h-4 w-4" />
-                Cadastrar Aluno
-              </>
-            )}
+          <Button type="submit" className="w-full" disabled={isSubmitting || !idBiometrico}>
+            {isSubmitting ? 'Salvando...' : 'Finalizar Cadastro'}
           </Button>
         </form>
       </CardContent>
