@@ -1,8 +1,8 @@
 import axios from 'axios'
 import type { Estudante, Presenca, PresencaMensal } from './types'
 
-
-const IP_SERVIDOR_LAN = '192.168.10.155';
+// Alinhe este IP com o IPv4 do seu computador na rede local ("PEDRO FLASHNET")
+const IP_SERVIDOR_LAN = '192.168.1.102'; 
 
 const api = axios.create({
   baseURL: `http://${IP_SERVIDOR_LAN}:8080/api/estudantes`,
@@ -11,7 +11,10 @@ const api = axios.create({
   },
 })
 
-// Estudantes
+// =========================================================================
+// ESTUDANTES
+// =========================================================================
+
 export async function getEstudantes(): Promise<Estudante[]> {
   const response = await api.get<Estudante[]>('') 
   return response.data
@@ -19,7 +22,7 @@ export async function getEstudantes(): Promise<Estudante[]> {
 
 export async function cadastrarEstudante(uid: string, nome: string): Promise<Estudante> {
   const response = await api.post<Estudante>('/cadastrar', null, {
-    params: { uid, nome },
+    params: { uid, nome }, // Transmite as variáveis na URL para o @RequestParam do Spring Boot
   })
   return response.data
 }
@@ -35,7 +38,10 @@ export async function deletarEstudante(id: number): Promise<void> {
   await api.delete(`/deletar/${id}`) 
 }
 
-// Chamada/Presença
+// =========================================================================
+// CHAMADA / PRESENÇA
+// =========================================================================
+
 export async function registrarChamada(uid: string): Promise<any> {
   const response = await api.post('/chamada', null, {
     params: { uid },

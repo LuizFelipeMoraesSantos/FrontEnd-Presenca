@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { User, Fingerprint, UserPlus, CheckCircle2, Wifi, WifiOff } from 'lucide-react'
+import { User, CheckCircle2, Wifi, WifiOff } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -24,26 +24,27 @@ export function StudentForm() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isEscutandoWifi, setIsEscutandoWifi] = useState(false)
 
-  // COLOQUE AQUI O ENDEREÇO IP QUE APARECE NO MONITOR SERIAL DO SEU ESP32
-  const ESP32_IP = '192.168.1.150' 
+  // Endereço do seu Backend Spring Boot
+  const BACKEND_URL = 'http://192.168.1.102:8080'
 
   useEffect(() => {
     let interval: NodeJS.Timeout
 
+    // Executa a busca em segundo plano apenas se o usuário ativou a captura na tela
     if (isEscutandoWifi && !idBiometrico) {
-      // O computador requisita diretamente o IP do ESP32 na rede local
       interval = setInterval(async () => {
         try {
-          const response = await axios.get(`http://${ESP32_IP}/captura`, { timeout: 800 })
-          if (response.data && response.data.uid) {
-            setIdBiometrico(response.data.uid)
-            setIsEscutandoWifi(false)
-            toast.success(`Digital capturada direto do ESP32! ID: ${response.data.uid}`)
+          const response = await axios.get(`${BACKEND_URL}/api/estudantes/ultimo-uid`)
+          
+          if (response.data && response.data.uid && response.data.uid !== '') {
+            setIdBiometrico(response.data.uid) // Preenche o estado correto que ativa o botão!
+            setIsEscutandoWifi(false)          // Desliga a animação de busca na tela
+            toast.success(`Digital capturada via Wi-Fi! ID: ${response.data.uid}`)
           }
         } catch (err) {
-          // Ignora erros de timeout enquanto aguarda o dedo no sensor
+          console.error("Aguardando sinal do sensor biométrico...", err)
         }
-      }, 1000)
+      }, 2000) // Verifica a fila do Spring Boot a cada 2 segundos
     }
 
     return () => { if (interval) clearInterval(interval) }
@@ -65,7 +66,7 @@ export function StudentForm() {
     setIsSubmitting(true)
 
     try {
-      // Envia os dados consolidados para salvar no banco de dados através do Spring Boot
+      // Envia os dados para salvar no banco MySQL do XAMPP através da API
       await cadastrarEstudante(idBiometrico, nome.trim())
 
       toast.success('Aluno cadastrado com sucesso!', {
