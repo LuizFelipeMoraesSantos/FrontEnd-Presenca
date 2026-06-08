@@ -1,244 +1,210 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
-import { Fingerprint, CheckCircle2, AlertCircle, RefreshCw, Usb, Unplug } from 'lucide-react'
+import { useState } from 'react'
+import { Fingerprint, CheckCircle2, XCircle, Clock, Search } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-import { registrarChamada } from '@/lib/api'
-import { useSerial } from '@/hooks/use-serial'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Badge } from '@/components/ui/badge'
+import api, { registrarChamada } from '@/lib/api'
+import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 
-interface LogPresenca {
-  id: string
-  timestamp: string
-  uid: string
+interface AttendanceRecord {
+  id: number
   nome: string
-  status: 'sucesso' | 'erro'
-  mensagem: string
+  uid: string
+  horario: string
 }
 
-export function AttendanceRegister() {
-  const [logs, setLogs] = useState<LogPresenca[]>([])
-  const [statusAtual, setStatusAtual] = useState<{
-    tipo: 'idle' | 'sucesso' | 'erro' | 'processando'
-    nome?: string
-    mensagem?: string
-  }>({ tipo: 'idle' })
+interface AttendanceRegisterProps {
+  onSucessoChamada: (nome: string, uid: string) => void
+  records: AttendanceRecord[]
+}
 
-  // Processa e envia a string gerada pelo sensor biométrico do ESP32 para o Java
-  const processarEntradaBiometrica = useCallback(async (tokenBiometrico: string) => {
-    const uidLimpo = tokenBiometrico.trim().toUpperCase()
-    if (!uidLimpo) return
+type Status = 'idle' | 'scanning' | 'success' | 'error'
 
-    setStatusAtual({ tipo: 'processando' })
+export function AttendanceRegister({ onSucessoChamada, records }: AttendanceRegisterProps) {
+  const [uid, setUid] = useState('')
+  const [status, setStatus] = useState<Status>('idle')
+  const [message, setMessage] = useState('')
+  const [buscandoBiometria, setBuscandoBiometria] = useState(false)
+
+  const buscarUltimaDigitalDoSensor = async () => {
+    setBuscandoBiometria(true)
+    try {
+      const response = await api.get('/ultimo-uid')
+      if (response.data && response.data.uid) {
+        setUid(response.data.uid.toUpperCase())
+        toast.success('Digital capturada do sensor com sucesso!')
+      } else {
+        toast.error('Nenhuma digital recente encontrada no sensor.')
+      }
+    } catch (err) {
+      console.error(err)
+      toast.error('Erro ao conectar com o servidor para buscar biometria.')
+    } finally {
+      setBuscandoBiometria(false)
+    }
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!uid.trim() || status === 'scanning') return
+
+    setStatus('scanning')
+    setMessage('Consultando base de dados biométrica...')
 
     try {
-      // Dispara a requisição para o backend Java na rota singular (/chamada)
-      const resposta = await registrarChamada(uidLimpo)
+      // Envia o UID para o método POST /chamada no Java
+      const response = await registrarChamada(uid.trim())
+      
+      // O banco encontrou e retornou o nome correto vinculado ao ID
+      const nomeAluno = response?.nome || 'Aluno Identificado'
 
-      setStatusAtual({
-        tipo: 'sucesso',
-        nome: resposta.nome || 'Estudante',
-        mensagem: 'Presença registrada com sucesso!',
-      })
+      setStatus('success')
+      setMessage(`Presença confirmada para: ${nomeAluno}`)
+      
+      // Envia para renderizar no histórico
+      onSucessoChamada(nomeAluno, uid.trim())
+      setUid('')
 
-      setLogs((prev) => [
-        {
-          id: crypto.randomUUID(),
-          timestamp: new Date().toLocaleTimeString(),
-          uid: uidLimpo,
-          nome: resposta.nome || 'Estudante',
-          status: 'sucesso',
-          mensagem: 'Presença confirmada',
-        },
-        ...prev,
-      ])
+      setTimeout(() => {
+        setStatus('idle')
+        setMessage('')
+      }, 3500)
+
     } catch (error: any) {
       console.error(error)
-      // Captura mensagens de erro personalizadas do Spring Boot (ex: "Ja Registrado!")
-      const msgErro = error.response?.data?.nome || error.response?.data || 'Digital não cadastrada ou erro de conexão.'
-      
-      setStatusAtual({
-        tipo: 'erro',
-        mensagem: msgErro,
-      })
+      setStatus('error')
 
-      setLogs((prev) => [
-        {
-          id: crypto.randomUUID(),
-          timestamp: new Date().toLocaleTimeString(),
-          uid: uidLimpo,
-          nome: 'Desconhecido',
-          status: 'erro',
-          mensagem: msgErro,
-        },
-        ...prev,
-      ])
-    }
-  }, [])
+      if (error.response?.status === 404) {
+        setMessage('Digital não encontrada no sistema.')
+        toast.error('Identificação Falhou', {
+          description: 'Esta biometria não está associada a nenhum aluno cadastrado.',
+        })
+      } else if (error.response?.status === 409) {
+        setMessage('Presença já registada hoje.')
+        toast.warning('Aviso de Duplicidade', {
+          description: 'Este aluno já possui uma entrada computada para o dia de hoje.',
+        })
+      } else {
+        setMessage('Erro de ligação com o servidor.')
+        toast.error('Erro de Servidor', {
+          description: 'Verifique se o seu Backend Java está a correr na porta 8080.',
+        })
+      }
 
-  const { isSupported, isConnected, isConnecting, connect, disconnect, error } = useSerial({
-    baudRate: 9600,
-    onData: processarEntradaBiometrica,
-  })
-
-  // Retorna o painel para o estado padrão de espera após 4 segundos de uma leitura
-  useEffect(() => {
-    if (statusAtual.tipo === 'sucesso' || statusAtual.tipo === 'erro') {
-      const timer = setTimeout(() => {
-        setStatusAtual({ tipo: 'idle' })
+      setTimeout(() => {
+        setStatus('idle')
+        setMessage('')
       }, 4000)
-      return () => clearTimeout(timer)
     }
-  }, [statusAtual.tipo])
+  }
 
   return (
-    <div className="grid gap-6 md:grid-cols-2">
-      {/* Bloco do Monitor do Leitor Biométrico */}
-      <Card className="flex flex-col justify-between">
-        <CardHeader className="text-center pb-2">
-          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-primary/10">
-            <Fingerprint className={cn(
-              "h-8 w-8 text-primary",
-              statusAtual.tipo === 'processando' && "animate-pulse text-amber-500"
-            )} />
-          </div>
-          <CardTitle className="text-2xl">Leitor Biométrico</CardTitle>
-          <CardDescription>
-            Status da integração ativa com o dispositivo de captura IoT
-          </CardDescription>
-        </CardHeader>
-
-        <CardContent className="space-y-6 flex-1 flex flex-col justify-center">
-          {/* Feedbacks Dinâmicos de Tela */}
-          {statusAtual.tipo === 'idle' && (
-            <div className="rounded-xl border border-dashed p-8 text-center text-muted-foreground">
-              {isConnected ? (
-                <p className="animate-pulse text-green-600 dark:text-green-400 font-medium">
-                  Aguardando posicionamento do dedo no sensor...
-                </p>
-              ) : (
-                <p>Conecte o módulo USB para iniciar a validação biométrica</p>
-              )}
-            </div>
+    <Card className="border shadow-lg rounded-2xl overflow-hidden bg-card">
+      <CardHeader className="text-center pb-2 pt-6">
+        <div
+          className={cn(
+            'mx-auto mb-4 flex h-20 w-20 items-center justify-center rounded-2xl transition-all duration-300 border shadow-sm',
+            status === 'idle' && 'bg-primary/5 border-primary/10 text-primary',
+            status === 'scanning' && 'animate-pulse bg-amber-500/10 border-amber-500/20 text-amber-500',
+            status === 'success' && 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500',
+            status === 'error' && 'bg-destructive/10 border-destructive/20 text-destructive'
           )}
-
-          {statusAtual.tipo === 'processando' && (
-            <div className="flex flex-col items-center justify-center rounded-xl border bg-muted/30 p-8 text-center">
-              <RefreshCw className="mb-2 h-8 w-8 animate-spin text-amber-500" />
-              <p className="font-medium text-amber-600">Consultando Banco de Dados...</p>
-            </div>
+        >
+          {status === 'idle' && <Fingerprint className="h-10 w-10" />}
+          {status === 'scanning' && (
+            <div className="h-7 w-7 animate-spin rounded-full border-4 border-amber-500 border-t-transparent" />
           )}
+          {status === 'success' && <CheckCircle2 className="h-10 w-10" />}
+          {status === 'error' && <XCircle className="h-10 w-10" />}
+        </div>
+        <CardTitle className="text-xl font-bold">Validar Chamada</CardTitle>
+        <CardDescription className="text-xs">
+          Capture a digital vinda do sensor Wi-Fi para computar a entrada
+        </CardDescription>
+      </CardHeader>
 
-          {statusAtual.tipo === 'sucesso' && (
-            <Alert className="border-green-500 bg-green-50/50 dark:bg-green-950/20">
-              <CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-400" />
-              <AlertTitle className="text-green-800 dark:text-green-400 font-bold text-base">
-                Presença Confirmada!
-              </AlertTitle>
-              <AlertDescription className="text-green-700 dark:text-green-300 text-sm mt-1">
-                Olá, <span className="font-semibold">{statusAtual.nome}</span>. {statusAtual.mensagem}
-              </AlertDescription>
-            </Alert>
-          )}
-
-          {statusAtual.tipo === 'erro' && (
-            <Alert variant="destructive" className="bg-destructive/5">
-              <AlertCircle className="h-5 w-5" />
-              <AlertTitle className="font-bold text-base">Falha na Validação</AlertTitle>
-              <AlertDescription className="text-sm mt-1">
-                {statusAtual.mensagem}
-              </AlertDescription>
-            </Alert>
-          )}
-
-          {/* Gerenciamento de Conexão Serial com o Computador */}
-          <div className="flex flex-col items-center gap-3 pt-4 border-t">
-            {isSupported ? (
-              <Button
-                variant={isConnected ? "outline" : "default"}
-                onClick={isConnected ? disconnect : connect}
-                disabled={isConnecting}
-                className={cn("w-full gap-2", isConnected && "border-green-500 text-green-600 hover:bg-green-50 dark:hover:bg-green-950/30")}
-              >
-                {isConnecting ? (
-                  <>
-                    <RefreshCw className="h-4 w-4 animate-spin" />
-                    Sincronizando Módulo...
-                  </>
-                ) : isConnected ? (
-                  <>
-                    <Unplug className="h-4 w-4" />
-                    Desconectar Sensor
-                  </>
-                ) : (
-                  <>
-                    <Usb className="h-4 w-4" />
-                    Conectar Dispositivo Biométrico
-                  </>
-                )}
-              </Button>
-            ) : (
-              <p className="text-xs text-center text-muted-foreground">
-                A API Web Serial não é suportada por este navegador. Use o Google Chrome ou Microsoft Edge.
-              </p>
-            )}
-
-            {isConnected && (
-              <div className="flex items-center gap-1.5 text-xs text-green-600 dark:text-green-400">
-                <span className="h-2 w-2 animate-pulse rounded-full bg-green-500" />
-                Hardware pronto para leitura
-              </div>
-            )}
-            
-            {error && <p className="text-xs text-destructive font-medium">{error}</p>}
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Histórico em Tempo Real de Leituras */}
-      <Card className="flex flex-col h-[420px]">
-        <CardHeader>
-          <CardTitle className="text-lg flex items-center gap-2">
-            Últimas Capturas do Sensor
-          </CardTitle>
-          <CardDescription>
-            Histórico das requisições biométricas processadas nesta sessão
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex-1 overflow-y-auto min-h-0 pt-0">
-          {logs.length === 0 ? (
-            <div className="flex h-full items-center justify-center text-sm text-muted-foreground border border-dashed rounded-lg p-4">
-              Nenhuma leitura biométrica registrada ainda.
-            </div>
+      <CardContent className="space-y-5 pt-2 pb-6">
+        <Button
+          type="button"
+          variant="outline"
+          onClick={buscarUltimaDigitalDoSensor}
+          disabled={buscandoBiometria || status === 'scanning'}
+          className="w-full h-11 font-medium rounded-xl border bg-muted/30 hover:bg-muted/60 gap-2 transition-all text-xs uppercase tracking-wider"
+        >
+          {buscandoBiometria ? (
+            <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
           ) : (
-            <div className="space-y-3">
-              {logs.map((log) => (
-                <div
-                  key={log.id}
-                  className="flex items-center justify-between p-3 border rounded-xl bg-card text-sm shadow-sm transition-colors"
-                >
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <span className={cn(
-                        "h-2 w-2 rounded-full",
-                        log.status === 'sucesso' ? 'bg-green-500' : 'bg-destructive'
-                      )} />
-                      <p className="font-semibold tracking-tight">{log.nome}</p>
-                    </div>
-                    <p className="text-xs text-muted-foreground font-mono">{log.uid}</p>
-                    <p className="text-xs text-muted-foreground/80">{log.mensagem}</p>
-                  </div>
-                  <div className="text-right text-xs text-muted-foreground font-medium">
-                    {log.timestamp}
-                  </div>
-                </div>
-              ))}
+            <Search className="h-4 w-4" />
+          )}
+          {buscandoBiometria ? "A carregar do hardware..." : "Buscar Digital"}
+        </Button>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="uid-chamada" className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+              Código UID da Digital
+            </Label>
+            <div className="relative">
+              <Fingerprint className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/70" />
+              <Input
+                id="uid-chamada"
+                placeholder="Clique no botão acima ou insira o ID"
+                value={uid}
+                onChange={(e) => setUid(e.target.value.toUpperCase())}
+                className="pl-10 font-mono text-base h-11 transition-all rounded-xl border bg-muted/10 focus-visible:ring-primary"
+                disabled={status === 'scanning'}
+              />
+            </div>
+          </div>
+
+          {message && (
+            <div
+              className={cn(
+                'rounded-xl p-3 text-center text-xs font-semibold border',
+                status === 'success' && 'bg-emerald-500/5 border-emerald-500/10 text-emerald-600 dark:text-emerald-400',
+                status === 'error' && 'bg-destructive/5 border-destructive/10 text-destructive',
+                status === 'scanning' && 'bg-amber-500/5 border-amber-500/10 text-amber-600 dark:text-amber-400'
+              )}
+            >
+              {message}
             </div>
           )}
-        </CardContent>
-      </Card>
-    </div>
+
+          <Button
+            type="submit"
+            className="w-full h-11 font-medium rounded-xl text-sm transition-all shadow-md bg-primary hover:bg-primary/90 text-primary-foreground"
+            disabled={status === 'scanning' || !uid.trim()}
+          >
+            <Fingerprint className="mr-2 h-4 w-4" />
+            Registrar Presença
+          </Button>
+        </form>
+
+        {records.length > 0 && (
+          <div className="pt-4 border-t border-dashed space-y-2">
+            <div className="flex items-center gap-1.5 text-xs font-bold text-muted-foreground uppercase tracking-wider">
+              <Clock className="h-3.5 w-3.5" />
+              Último Confirmado
+            </div>
+            <div className="flex items-center justify-between rounded-xl border bg-muted/20 p-3">
+              <div>
+                <p className="text-sm font-semibold text-foreground">{records[0].nome}</p>
+                <Badge variant="secondary" className="mt-1 font-mono text-[10px] px-1.5 py-0">
+                  UID: {records[0].uid}
+                </Badge>
+              </div>
+              <span className="text-xs text-muted-foreground font-medium bg-background border rounded-lg px-2 py-1 shadow-sm">
+                {records[0].horario}
+              </span>
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   )
 }
