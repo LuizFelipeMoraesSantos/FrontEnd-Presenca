@@ -1,246 +1,244 @@
 'use client'
 
-import { useState, useCallback, useEffect } from 'react'
-import { ScanLine, CheckCircle2, XCircle, Usb, Unplug, CreditCard } from 'lucide-react'
+import { useState, useEffect, useCallback } from 'react'
+import { Fingerprint, CheckCircle2, AlertCircle, RefreshCw, Usb, Unplug } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { registrarChamada } from '@/lib/api'
 import { useSerial } from '@/hooks/use-serial'
 import { cn } from '@/lib/utils'
 
-interface AttendanceRegisterProps {
-  onRegister: (uid: string) => Promise<void>
-  autoRegister?: boolean
+interface LogPresenca {
+  id: string
+  timestamp: string
+  uid: string
+  nome: string
+  status: 'sucesso' | 'erro'
+  mensagem: string
 }
 
-type Status = 'idle' | 'scanning' | 'success' | 'error'
+export function AttendanceRegister() {
+  const [logs, setLogs] = useState<LogPresenca[]>([])
+  const [statusAtual, setStatusAtual] = useState<{
+    tipo: 'idle' | 'sucesso' | 'erro' | 'processando'
+    nome?: string
+    mensagem?: string
+  }>({ tipo: 'idle' })
 
-export function AttendanceRegister({ onRegister, autoRegister = true }: AttendanceRegisterProps) {
-  const [uid, setUid] = useState('')
-  const [status, setStatus] = useState<Status>('idle')
-  const [message, setMessage] = useState('')
-  const [lastRegisteredUid, setLastRegisteredUid] = useState('')
+  // Processa e envia a string gerada pelo sensor biométrico do ESP32 para o Java
+  const processarEntradaBiometrica = useCallback(async (tokenBiometrico: string) => {
+    const uidLimpo = tokenBiometrico.trim().toUpperCase()
+    if (!uidLimpo) return
 
-  const registerPresence = useCallback(async (tagUid: string) => {
-    if (!tagUid.trim() || status === 'scanning') return
-    
-    // Prevent duplicate registrations of same tag in quick succession
-    if (tagUid === lastRegisteredUid && status === 'success') return
-
-    setStatus('scanning')
-    setMessage('Verificando tag...')
+    setStatusAtual({ tipo: 'processando' })
 
     try {
-      await onRegister(tagUid.trim())
-      setStatus('success')
-      setMessage('Presenca registrada com sucesso!')
-      setLastRegisteredUid(tagUid)
-      setUid('')
-      setTimeout(() => {
-        setStatus('idle')
-        setMessage('')
-      }, 3000)
-    } catch {
-      setStatus('error')
-      setMessage('Erro ao registrar presenca. Tente novamente.')
-      setTimeout(() => {
-        setStatus('idle')
-        setMessage('')
-      }, 3000)
-    }
-  }, [onRegister, status, lastRegisteredUid])
+      // Dispara a requisição para o backend Java na rota singular (/chamada)
+      const resposta = await registrarChamada(uidLimpo)
 
-  const handleSerialData = useCallback((data: string) => {
-    const cleanUid = data.toUpperCase()
-    setUid(cleanUid)
-    
-    // Auto-register when tag is read
-    if (autoRegister && cleanUid) {
-      registerPresence(cleanUid)
+      setStatusAtual({
+        tipo: 'sucesso',
+        nome: resposta.nome || 'Estudante',
+        mensagem: 'Presença registrada com sucesso!',
+      })
+
+      setLogs((prev) => [
+        {
+          id: crypto.randomUUID(),
+          timestamp: new Date().toLocaleTimeString(),
+          uid: uidLimpo,
+          nome: resposta.nome || 'Estudante',
+          status: 'sucesso',
+          mensagem: 'Presença confirmada',
+        },
+        ...prev,
+      ])
+    } catch (error: any) {
+      console.error(error)
+      // Captura mensagens de erro personalizadas do Spring Boot (ex: "Ja Registrado!")
+      const msgErro = error.response?.data?.nome || error.response?.data || 'Digital não cadastrada ou erro de conexão.'
+      
+      setStatusAtual({
+        tipo: 'erro',
+        mensagem: msgErro,
+      })
+
+      setLogs((prev) => [
+        {
+          id: crypto.randomUUID(),
+          timestamp: new Date().toLocaleTimeString(),
+          uid: uidLimpo,
+          nome: 'Desconhecido',
+          status: 'erro',
+          mensagem: msgErro,
+        },
+        ...prev,
+      ])
     }
-  }, [autoRegister, registerPresence])
+  }, [])
 
   const { isSupported, isConnected, isConnecting, connect, disconnect, error } = useSerial({
     baudRate: 9600,
-    onData: handleSerialData,
+    onData: processarEntradaBiometrica,
   })
 
-  // Clear last registered UID after some time to allow re-registration
+  // Retorna o painel para o estado padrão de espera após 4 segundos de uma leitura
   useEffect(() => {
-    if (lastRegisteredUid) {
+    if (statusAtual.tipo === 'sucesso' || statusAtual.tipo === 'erro') {
       const timer = setTimeout(() => {
-        setLastRegisteredUid('')
-      }, 10000) // 10 seconds cooldown
+        setStatusAtual({ tipo: 'idle' })
+      }, 4000)
       return () => clearTimeout(timer)
     }
-  }, [lastRegisteredUid])
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    await registerPresence(uid)
-  }
+  }, [statusAtual.tipo])
 
   return (
-    <div className="mx-auto max-w-lg space-y-6">
-      <Card>
-        <CardHeader className="text-center">
-          <div
-            className={cn(
-              'mx-auto mb-4 flex h-20 w-20 items-center justify-center rounded-3xl transition-all duration-300',
-              status === 'idle' && 'bg-primary/10',
-              status === 'scanning' && 'animate-pulse bg-chart-3/20',
-              status === 'success' && 'bg-accent/20',
-              status === 'error' && 'bg-destructive/10'
-            )}
-          >
-            {status === 'idle' && <ScanLine className="h-10 w-10 text-primary" />}
-            {status === 'scanning' && (
-              <div className="h-8 w-8 animate-spin rounded-full border-4 border-chart-3 border-t-transparent" />
-            )}
-            {status === 'success' && <CheckCircle2 className="h-10 w-10 text-accent" />}
-            {status === 'error' && <XCircle className="h-10 w-10 text-destructive" />}
+    <div className="grid gap-6 md:grid-cols-2">
+      {/* Bloco do Monitor do Leitor Biométrico */}
+      <Card className="flex flex-col justify-between">
+        <CardHeader className="text-center pb-2">
+          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-primary/10">
+            <Fingerprint className={cn(
+              "h-8 w-8 text-primary",
+              statusAtual.tipo === 'processando' && "animate-pulse text-amber-500"
+            )} />
           </div>
-          <CardTitle className="text-2xl">Registro de Chamada</CardTitle>
+          <CardTitle className="text-2xl">Leitor Biométrico</CardTitle>
           <CardDescription>
-            {isConnected 
-              ? "Aproxime a tag RFID do leitor para registrar automaticamente"
-              : "Conecte o Arduino ou digite o codigo manualmente"
-            }
+            Status da integração ativa com o dispositivo de captura IoT
           </CardDescription>
         </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-6">
-            <div className="space-y-2">
-              <Label htmlFor="uid-chamada">UID da Tag RFID</Label>
-              <div className="relative">
-                <CreditCard className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  id="uid-chamada"
-                  placeholder={isConnected ? "Aguardando leitura da tag..." : "Digite o UID manualmente"}
-                  value={uid}
-                  onChange={(e) => setUid(e.target.value.toUpperCase())}
-                  className={cn(
-                    "pl-10 font-mono text-lg",
-                    isConnected && "border-green-500 focus-visible:ring-green-500"
-                  )}
-                  disabled={status === 'scanning'}
-                />
-              </div>
+
+        <CardContent className="space-y-6 flex-1 flex flex-col justify-center">
+          {/* Feedbacks Dinâmicos de Tela */}
+          {statusAtual.tipo === 'idle' && (
+            <div className="rounded-xl border border-dashed p-8 text-center text-muted-foreground">
+              {isConnected ? (
+                <p className="animate-pulse text-green-600 dark:text-green-400 font-medium">
+                  Aguardando posicionamento do dedo no sensor...
+                </p>
+              ) : (
+                <p>Conecte o módulo USB para iniciar a validação biométrica</p>
+              )}
             </div>
+          )}
 
-            {message && (
-              <div
-                className={cn(
-                  'rounded-lg p-3 text-center text-sm font-medium',
-                  status === 'success' && 'bg-accent/10 text-accent',
-                  status === 'error' && 'bg-destructive/10 text-destructive',
-                  status === 'scanning' && 'bg-chart-3/10 text-chart-3'
-                )}
-              >
-                {message}
-              </div>
-            )}
+          {statusAtual.tipo === 'processando' && (
+            <div className="flex flex-col items-center justify-center rounded-xl border bg-muted/30 p-8 text-center">
+              <RefreshCw className="mb-2 h-8 w-8 animate-spin text-amber-500" />
+              <p className="font-medium text-amber-600">Consultando Banco de Dados...</p>
+            </div>
+          )}
 
-            <Button
-              type="submit"
-              className="w-full"
-              size="lg"
-              disabled={status === 'scanning' || !uid.trim()}
-            >
-              <ScanLine className="mr-2 h-5 w-5" />
-              Registrar Presenca
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
+          {statusAtual.tipo === 'sucesso' && (
+            <Alert className="border-green-500 bg-green-50/50 dark:bg-green-950/20">
+              <CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-400" />
+              <AlertTitle className="text-green-800 dark:text-green-400 font-bold text-base">
+                Presença Confirmada!
+              </AlertTitle>
+              <AlertDescription className="text-green-700 dark:text-green-300 text-sm mt-1">
+                Olá, <span className="font-semibold">{statusAtual.nome}</span>. {statusAtual.mensagem}
+              </AlertDescription>
+            </Alert>
+          )}
 
-      {/* Arduino Connection Card */}
-      <Card className={cn(
-        "border-dashed transition-colors",
-        isConnected && "border-green-500 bg-green-50/50 dark:bg-green-950/20"
-      )}>
-        <CardContent className="flex items-center gap-4 p-6">
-          <div className={cn(
-            "flex h-12 w-12 items-center justify-center rounded-xl transition-colors",
-            isConnected ? "bg-green-100 dark:bg-green-900" : "bg-primary/10"
-          )}>
-            {isConnected ? (
-              <Usb className="h-6 w-6 text-green-600 dark:text-green-400" />
-            ) : (
-              <Unplug className="h-6 w-6 text-muted-foreground" />
-            )}
-          </div>
-          <div className="flex-1">
-            <p className="font-medium">Leitor Arduino/RFID</p>
-            <p className="text-sm text-muted-foreground">
-              {isConnected 
-                ? "Conectado - Leitura automatica ativada"
-                : isSupported 
-                  ? "Clique para conectar via USB"
-                  : "Use Chrome ou Edge para conectar"
-              }
-            </p>
-            {error && (
-              <p className="text-xs text-destructive mt-1">{error}</p>
-            )}
-          </div>
-          <div className="flex flex-col items-end gap-2">
-            {isConnected ? (
-              <>
-                <div className="flex items-center gap-2">
-                  <span className="h-3 w-3 animate-pulse rounded-full bg-green-500" />
-                  <span className="text-sm font-medium text-green-600 dark:text-green-400">
-                    Online
-                  </span>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={disconnect}
-                  className="text-muted-foreground hover:text-destructive"
-                >
-                  Desconectar
-                </Button>
-              </>
-            ) : isSupported ? (
+          {statusAtual.tipo === 'erro' && (
+            <Alert variant="destructive" className="bg-destructive/5">
+              <AlertCircle className="h-5 w-5" />
+              <AlertTitle className="font-bold text-base">Falha na Validação</AlertTitle>
+              <AlertDescription className="text-sm mt-1">
+                {statusAtual.mensagem}
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {/* Gerenciamento de Conexão Serial com o Computador */}
+          <div className="flex flex-col items-center gap-3 pt-4 border-t">
+            {isSupported ? (
               <Button
-                variant="secondary"
-                size="sm"
-                onClick={connect}
+                variant={isConnected ? "outline" : "default"}
+                onClick={isConnected ? disconnect : connect}
                 disabled={isConnecting}
-                className="gap-2"
+                className={cn("w-full gap-2", isConnected && "border-green-500 text-green-600 hover:bg-green-50 dark:hover:bg-green-950/30")}
               >
                 {isConnecting ? (
                   <>
-                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
-                    Conectando...
+                    <RefreshCw className="h-4 w-4 animate-spin" />
+                    Sincronizando Módulo...
+                  </>
+                ) : isConnected ? (
+                  <>
+                    <Unplug className="h-4 w-4" />
+                    Desconectar Sensor
                   </>
                 ) : (
                   <>
                     <Usb className="h-4 w-4" />
-                    Conectar
+                    Conectar Dispositivo Biométrico
                   </>
                 )}
               </Button>
             ) : (
-              <span className="text-sm text-muted-foreground">Indisponivel</span>
+              <p className="text-xs text-center text-muted-foreground">
+                A API Web Serial não é suportada por este navegador. Use o Google Chrome ou Microsoft Edge.
+              </p>
             )}
+
+            {isConnected && (
+              <div className="flex items-center gap-1.5 text-xs text-green-600 dark:text-green-400">
+                <span className="h-2 w-2 animate-pulse rounded-full bg-green-500" />
+                Hardware pronto para leitura
+              </div>
+            )}
+            
+            {error && <p className="text-xs text-destructive font-medium">{error}</p>}
           </div>
         </CardContent>
       </Card>
 
-      {/* Instructions */}
-      {isConnected && (
-        <Card className="bg-muted/50">
-          <CardContent className="p-4">
-            <p className="text-sm text-muted-foreground text-center">
-              O sistema registra a presenca automaticamente quando uma tag e lida. 
-              Ha um intervalo de 10 segundos entre leituras da mesma tag.
-            </p>
-          </CardContent>
-        </Card>
-      )}
+      {/* Histórico em Tempo Real de Leituras */}
+      <Card className="flex flex-col h-[420px]">
+        <CardHeader>
+          <CardTitle className="text-lg flex items-center gap-2">
+            Últimas Capturas do Sensor
+          </CardTitle>
+          <CardDescription>
+            Histórico das requisições biométricas processadas nesta sessão
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex-1 overflow-y-auto min-h-0 pt-0">
+          {logs.length === 0 ? (
+            <div className="flex h-full items-center justify-center text-sm text-muted-foreground border border-dashed rounded-lg p-4">
+              Nenhuma leitura biométrica registrada ainda.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {logs.map((log) => (
+                <div
+                  key={log.id}
+                  className="flex items-center justify-between p-3 border rounded-xl bg-card text-sm shadow-sm transition-colors"
+                >
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className={cn(
+                        "h-2 w-2 rounded-full",
+                        log.status === 'sucesso' ? 'bg-green-500' : 'bg-destructive'
+                      )} />
+                      <p className="font-semibold tracking-tight">{log.nome}</p>
+                    </div>
+                    <p className="text-xs text-muted-foreground font-mono">{log.uid}</p>
+                    <p className="text-xs text-muted-foreground/80">{log.mensagem}</p>
+                  </div>
+                  <div className="text-right text-xs text-muted-foreground font-medium">
+                    {log.timestamp}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   )
 }
