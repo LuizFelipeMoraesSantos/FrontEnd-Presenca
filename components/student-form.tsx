@@ -24,13 +24,13 @@ export function StudentForm() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isEscutandoWifi, setIsEscutandoWifi] = useState(false)
 
-  // Endereço do seu Backend Spring Boot
+  // URL do seu Backend Spring Boot
   const BACKEND_URL = 'http://192.168.1.102:8080'
 
   useEffect(() => {
     let interval: NodeJS.Timeout
 
-    // Executa a busca em segundo plano apenas se o usuário ativou a captura na tela
+    // Ativa a busca na fila do Spring Boot se o usuário clicou no botão de escuta
     if (isEscutandoWifi && !idBiometrico) {
       interval = setInterval(async () => {
         try {
@@ -38,13 +38,13 @@ export function StudentForm() {
           
           if (response.data && response.data.uid && response.data.uid !== '') {
             setIdBiometrico(response.data.uid) // Preenche o estado correto que ativa o botão!
-            setIsEscutandoWifi(false)          // Desliga a animação de busca na tela
+            setIsEscutandoWifi(false)          // Desliga a animação de pulso na tela
             toast.success(`Digital capturada via Wi-Fi! ID: ${response.data.uid}`)
           }
         } catch (err) {
           console.error("Aguardando sinal do sensor biométrico...", err)
         }
-      }, 2000) // Verifica a fila do Spring Boot a cada 2 segundos
+      }, 2000) // Consulta o servidor Java a cada 2 segundos
     }
 
     return () => { if (interval) clearInterval(interval) }
@@ -66,7 +66,7 @@ export function StudentForm() {
     setIsSubmitting(true)
 
     try {
-      // Envia os dados para salvar no banco MySQL do XAMPP através da API
+      // Envia os dados estruturados para o MySQL do XAMPP via @RequestParam da API
       await cadastrarEstudante(idBiometrico, nome.trim())
 
       toast.success('Aluno cadastrado com sucesso!', {

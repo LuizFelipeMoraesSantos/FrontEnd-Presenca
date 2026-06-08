@@ -20,9 +20,11 @@ export async function getEstudantes(): Promise<Estudante[]> {
   return response.data
 }
 
+// CORRIGIDO: Agora envia uid e nome no corpo do JSON para o @RequestBody do Spring Boot
 export async function cadastrarEstudante(uid: string, nome: string): Promise<Estudante> {
-  const response = await api.post<Estudante>('/cadastrar', null, {
-    params: { uid, nome }, // Transmite as variáveis na URL para o @RequestParam do Spring Boot
+  const response = await api.post<Estudante>('/cadastrar', { 
+    uid, 
+    nome 
   })
   return response.data
 }
@@ -42,9 +44,10 @@ export async function deletarEstudante(id: number): Promise<void> {
 // CHAMADA / PRESENÇA
 // =========================================================================
 
+// CORRIGIDO: Alinhado para bater na rota exata no singular (/chamada) do Spring Boot
 export async function registrarChamada(uid: string): Promise<any> {
-  const response = await api.post('/chamada', null, {
-    params: { uid },
+  const response = await api.post('/chamada', { 
+    uid 
   })
   return response.data
 }

@@ -1,12 +1,32 @@
-import { StudentForm } from "@/components/student-form"
+const handleSubmit = async (e: React.FormEvent) => {
+  e.preventDefault()
+  if (!nome || !biometricToken) return; // Evita enviar campos vazios
 
-// Força o Next.js a tratar essa rota como dinâmica, prevenindo erros de pré-renderização estática
-export const dynamic = "force-dynamic"
+  setIsSubmitting(true)
 
-export default function CadastrarPage() {
-  return (
-    <div className="container mx-auto py-10 px-4">
-      <StudentForm />
-    </div>
-  )
+  try {
+    // Passando 'uid' em vez de 'tagRfid'
+    await cadastrarEstudante({ 
+      nome, 
+      uid: biometricToken 
+    })
+    
+    toast({
+      title: "Sucesso!",
+      description: "Estudante cadastrado com sucesso.",
+    })
+    
+    setNome("")
+    setBiometricToken("") // Limpa o token após cadastrar
+    
+  } catch (error) {
+    console.error(error)
+    toast({
+      variant: "destructive",
+      title: "Erro ao cadastrar",
+      description: "Verifique a ligação com o servidor.",
+    })
+  } finally {
+    setIsSubmitting(false)
+  }
 }
