@@ -1,77 +1,51 @@
 import axios from 'axios'
-import type { Estudante, Presenca, PresencaMensal } from './types'
+import type { Estudante } from './types'
 
+// URL base apontando diretamente para o contexto do seu Spring Boot
+const API_URL = 'http://localhost:8080/api/estudantes'
+
+// Instância configurada do Axios
 const api = axios.create({
-  // URL ajustada para o IP local do seu backend Java
-  baseURL: 'http://127.0.0.1:8080/api/estudantes',
+  baseURL: API_URL,
   headers: {
     'Content-Type': 'application/json',
   },
 })
 
-// =========================================================================
-// GESTÃO DE ESTUDANTES
-// =========================================================================
-
-// Listar todos os estudantes cadastrados
+// 1. LISTAR ESTUDANTES
 export async function getEstudantes(): Promise<Estudante[]> {
-  const response = await api.get<Estudante[]>('') 
+  const response = await api.get<Estudante[]>('')
   return response.data
 }
 
-// Cadastrar um novo estudante associando o nome ao UID biométrico
+// 2. EFETUAR CADASTRO (Alinhado com @RequestParam do Java)
 export async function cadastrarEstudante(uid: string, nome: string): Promise<Estudante> {
-  const response = await api.post<Estudante>('/cadastrar', null, {
-    params: { uid, nome },
-  })
+  // Envia os dados encapsulados como parâmetros de URL (Query String)
+  const response = await api.post<Estudante>(`/cadastrar?uid=${encodeURIComponent(uid)}&nome=${encodeURIComponent(nome)}`)
   return response.data
 }
 
-// Atualizar os dados de identificação do estudante
+// 3. ATUALIZAR ESTUDANTE
 export async function atualizarEstudante(id: number, uid: string, nome: string): Promise<Estudante> {
-  const response = await api.put<Estudante>('/atualizar', null, {
-    params: { id, uid, nome }, 
-  })
+  const params = `id=${encodeURIComponent(String(id))}&uid=${encodeURIComponent(uid)}&nome=${encodeURIComponent(nome)}`
+  const response = await api.put<Estudante>(`/atualizar?${params}`)
   return response.data
 }
 
-// Excluir um estudante do sistema
+// 3. REGISTRAR PRESENÇA / CHAMADA (Alinhado com @RequestParam do Java)
+export async function registrarPresenca(uid: string): Promise<{ status: string; nome: string; uid: string }> {
+  // Envia o UID capturado pelo ESP32 via Query String para processamento
+  const response = await api.post<{ status: string; nome: string; uid: string }>(`/chamada?uid=${encodeURIComponent(uid)}`)
+  return response.data
+}
+
+// 4. OBTER ÚLTIMO UID BIOMÉTRICO CAPTURADO
+export async function getUltimoUid(): Promise<{ uid: string }> {
+  const response = await api.get<{ uid: string }>('/ultimo-uid')
+  return response.data
+}
+
+// 5. DELETAR ESTUDANTE
 export async function deletarEstudante(id: number): Promise<void> {
-  await api.delete(`/deletar/${id}`) 
+  await api.delete(`/deletar/${id}`)
 }
-
-// =========================================================================
-// GESTÃO DE CHAMADA / PRESENÇAS
-// =========================================================================
-
-// Registrar chamada eletrônica (usada pelo sensor Wi-Fi ou botão da tela de chamada)
-export async function registrarChamada(uid: string): Promise<any> {
-  const response = await api.post('/chamada', null, {
-    params: { uid },
-  })
-  return response.data
-}
-
-// CORREÇÃO DO ERRO: Adicionada a função solicitada pela tela de faltas para inserção manual
-export async function adicionarPresencaManual(uid: string): Promise<any> {
-  const response = await api.post('/chamada', null, {
-    params: { uid },
-  })
-  return response.data
-}
-
-// CORREÇÃO DO ERRO: Adicionada a função solicitada para remover presenças/reverter faltas
-export async function removerPresenca(idPresenca: number): Promise<void> {
-  // Ajuste esta rota caso mude o endpoint de exclusão de presenças no seu Java
-  await api.delete(`/presencas/${idPresenca}`)
-}
-
-// Consultar o relatório de frequências mensais
-export async function getPresencasMensais(mes: number, ano: number): Promise<PresencaMensal[]> {
-  const response = await api.get<PresencaMensal[]>('/presencas/mensal', {
-    params: { mes, ano },
-  })
-  return response.data
-}
-
-export default api
